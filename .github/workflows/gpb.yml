@@ -23,7 +23,7 @@ jobs:
       - name: Validate APK
         run: |
           file app.apk
-          file app.apk | grep -q "Zip archive" || (echo "Not a valid APK" && exit 1)
+          file app.apk | grep -Eq "Zip archive|Android package" || (echo "Not a valid APK" && exit 1)
 
       # ---------------------------
       - name: Calculate APK hash

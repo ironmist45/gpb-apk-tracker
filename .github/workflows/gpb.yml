@@ -88,5 +88,19 @@ jobs:
           git push
 
       # ---------------------------
+      - name: Create Release
+        if: steps.compare.outputs.update == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: gpb-${{ github.run_id }}
+          name: GPB update
+          body: |
+            New APK detected.
+
+            SHA256:
+            ${{ steps.new.outputs.new }}
+          files: app.apk
+
+      # ---------------------------
       - name: Debug result
         run: echo "Update = ${{ steps.compare.outputs.update }}"

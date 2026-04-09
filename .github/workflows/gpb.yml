@@ -1,12 +1,15 @@
-name: GPB APK Check (Lite)
+name: GPB APK Check (Lite Visible)
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 on:
   schedule:
-    - cron: "0 3 * * 1"  # раз в неделю
+    - cron: "0 3 * * 1"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   check:
@@ -65,7 +68,7 @@ jobs:
           CERT: ${{ steps.cert.outputs.cert }}
 
       # ---------------------------
-      - name: Save certificate (first run only)
+      - name: Save certificate (first run)
         if: steps.oldcert.outputs.oldcert == 'none'
         run: mv cert.txt cert_saved.txt
 
@@ -102,17 +105,20 @@ jobs:
           NEW_HASH: ${{ steps.new.outputs.new }}
 
       # ---------------------------
-      - name: Save hash (first run only)
-        if: steps.old.outputs.old == 'none'
+      - name: Save new hash if changed
+        if: steps.compare.outputs.update == 'true' || steps.old.outputs.old == 'none'
         run: mv new_hash.txt hash.txt
+
+      # ---------------------------
+      - name: Commit changes (hash + cert)
+        if: steps.compare.outputs.update == 'true' || steps.oldcert.outputs.oldcert == 'none'
+        run: |
+          git config user.name "gpb-bot"
+          git config user.email "gpb@example.com"
+          git add hash.txt cert_saved.txt
+          git commit -m "Update APK hash" || echo "No changes"
+          git push
 
       # ---------------------------
       - name: Result
         run: echo "Update = ${{ steps.compare.outputs.update }}"
-
-      # ---------------------------
-      - name: Fail if update found
-        if: steps.compare.outputs.update == 'true'
-        run: |
-          echo "🚀 New version detected!"
-          exit 1

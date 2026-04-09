@@ -74,7 +74,7 @@ jobs:
           CERT: ${{ steps.cert.outputs.cert }}
 
       # ---------------------------
-      - name: Save certificate
+      - name: Save certificate if new
         if: steps.oldcert.outputs.oldcert == 'none'
         run: mv cert.txt cert_saved.txt
 
@@ -116,13 +116,13 @@ jobs:
         run: mv new_hash.txt hash.txt
 
       # ---------------------------
-      - name: Commit changes
-        if: steps.compare.outputs.update == 'true'
+      - name: Commit changes (hash + cert)
+        if: steps.compare.outputs.update == 'true' || steps.oldcert.outputs.oldcert == 'none'
         run: |
           git config user.name "gpb-bot"
           git config user.email "gpb@example.com"
           git add hash.txt cert_saved.txt
-          git commit -m "New APK detected" || echo "No changes"
+          git commit -m "Update APK data" || echo "No changes"
           git push
 
       # ---------------------------

@@ -12,7 +12,63 @@ jobs:
 
     steps:
       # ---------------------------
-      - name: Download APK
+      - name: Check headers
+        id: headers
+        run: |
+          curl -sI https://static.online.gpb.ru/media/mobile/apk/new_version/android_inapp/android_inapp.apk > headers.txt
+          
+          ETAG=$(grep -i ETag headers.txt | awk '{print $2}' | tr -d '\r')
+          LAST_MOD=$(grep -i Last-Modified headers.txt | cut -d' ' -f2- | tr -d '\r')
+
+          echo "etag=$ETAG" >> $GITHUB_OUTPUT
+          echo "lastmod=$LAST_MOD" >> $GITHUB_OUTPUT
+
+      # ---------------------------
+      - name: Load old headers
+        id: oldheaders
+        run: |
+          if [ -f etag.txt ]; then
+            OLD_ETAG=$(cat etag.txt)
+          else
+            OLD_ETAG=none
+          fi
+
+          if [ -f lastmod.txt ]; then
+            OLD_LAST=$(cat lastmod.txt)
+          else
+            OLD_LAST=none
+          fi
+
+          echo "old_etag=$OLD_ETAG" >> $GITHUB_OUTPUT
+          echo "old_last=$OLD_LAST" >> $GITHUB_OUTPUT
+
+      # ---------------------------
+      - name: Compare headers
+        id: compare
+        run: |
+          if [ "$OLD_ETAG" = "$NEW_ETAG" ] && [ "$OLD_LAST" = "$NEW_LAST" ]; then
+            echo "update=false" >> $GITHUB_OUTPUT
+          else
+            echo "update=true" >> $GITHUB_OUTPUT
+          fi
+        env:
+          OLD_ETAG: ${{ steps.oldheaders.outputs.old_etag }}
+          OLD_LAST: ${{ steps.oldheaders.outputs.old_last }}
+          NEW_ETAG: ${{ steps.headers.outputs.etag }}
+          NEW_LAST: ${{ steps.headers.outputs.lastmod }}
+
+      # ---------------------------
+      - name: Debug headers
+        run: |
+          echo "Old ETag: ${{ steps.oldheaders.outputs.old_etag }}"
+          echo "New ETag: ${{ steps.headers.outputs.etag }}"
+          echo "Old Last-Modified: ${{ steps.oldheaders.outputs.old_last }}"
+          echo "New Last-Modified: ${{ steps.headers.outputs.lastmod }}"
+          echo "Update = ${{ steps.compare.outputs.update }}"
+
+      # ---------------------------
+      - name: Download APK (only if changed)
+        if: steps.compare.outputs.update == 'true'
         run: |
           curl -L --fail --retry 3 --retry-delay 5 \
             -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
@@ -21,51 +77,14 @@ jobs:
 
       # ---------------------------
       - name: Validate APK
+        if: steps.compare.outputs.update == 'true'
         run: |
           file app.apk
           file app.apk | grep -Eq "Zip archive|Android package" || (echo "Not a valid APK" && exit 1)
 
       # ---------------------------
-      - name: Calculate APK hash
-        run: sha256sum app.apk | awk '{print $1}' > new_hash.txt
-
-      # ---------------------------
-      - name: Load old hash
-        id: old
+      - name: Save new headers
+        if: steps.compare.outputs.update == 'true'
         run: |
-          if [ -f hash.txt ]; then
-            echo "old=$(cat hash.txt)" >> $GITHUB_OUTPUT
-          else
-            echo "old=none" >> $GITHUB_OUTPUT
-          fi
-
-      # ---------------------------
-      - name: Load new hash
-        id: new
-        run: echo "new=$(cat new_hash.txt)" >> $GITHUB_OUTPUT
-
-      # ---------------------------
-      - name: Compare hashes
-        id: compare
-        run: |
-          if [ "$OLD_HASH" = "$NEW_HASH" ]; then
-            echo "update=false" >> $GITHUB_OUTPUT
-          else
-            echo "update=true" >> $GITHUB_OUTPUT
-          fi
-        env:
-          OLD_HASH: ${{ steps.old.outputs.old }}
-          NEW_HASH: ${{ steps.new.outputs.new }}
-
-      # ---------------------------
-      - name: Save new hash
-        if: steps.compare.outputs.update == 'true' || steps.old.outputs.old == 'none'
-        run: mv new_hash.txt hash.txt
-
-      # ---------------------------
-      - name: Debug result
-        run: echo "Update = ${{ steps.compare.outputs.update }}"
-
-      # ---------------------------
-      - name: Check file
-        run: ls -lh app.apk
+          echo "${{ steps.headers.outputs.etag }}" > etag.txt
+          echo "${{ steps.headers.outputs.lastmod }}" > lastmod.txt

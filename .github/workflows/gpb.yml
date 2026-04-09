@@ -1,13 +1,17 @@
 name: GPB APK Tracker
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   workflow_dispatch:
 
 jobs:
-  test-download:
+  check:
     runs-on: ubuntu-latest
 
     steps:
+      # ---------------------------
       - name: Download APK
         run: |
           curl -L --fail --retry 3 --retry-delay 5 \
@@ -15,5 +19,53 @@ jobs:
             -o app.apk \
             https://static.online.gpb.ru/media/mobile/apk/new_version/android_inapp/android_inapp.apk
 
+      # ---------------------------
+      - name: Validate APK
+        run: |
+          file app.apk
+          file app.apk | grep -q "Zip archive" || (echo "Not a valid APK" && exit 1)
+
+      # ---------------------------
+      - name: Calculate APK hash
+        run: sha256sum app.apk | awk '{print $1}' > new_hash.txt
+
+      # ---------------------------
+      - name: Load old hash
+        id: old
+        run: |
+          if [ -f hash.txt ]; then
+            echo "old=$(cat hash.txt)" >> $GITHUB_OUTPUT
+          else
+            echo "old=none" >> $GITHUB_OUTPUT
+          fi
+
+      # ---------------------------
+      - name: Load new hash
+        id: new
+        run: echo "new=$(cat new_hash.txt)" >> $GITHUB_OUTPUT
+
+      # ---------------------------
+      - name: Compare hashes
+        id: compare
+        run: |
+          if [ "$OLD_HASH" = "$NEW_HASH" ]; then
+            echo "update=false" >> $GITHUB_OUTPUT
+          else
+            echo "update=true" >> $GITHUB_OUTPUT
+          fi
+        env:
+          OLD_HASH: ${{ steps.old.outputs.old }}
+          NEW_HASH: ${{ steps.new.outputs.new }}
+
+      # ---------------------------
+      - name: Save new hash
+        if: steps.compare.outputs.update == 'true' || steps.old.outputs.old == 'none'
+        run: mv new_hash.txt hash.txt
+
+      # ---------------------------
+      - name: Debug result
+        run: echo "Update = ${{ steps.compare.outputs.update }}"
+
+      # ---------------------------
       - name: Check file
         run: ls -lh app.apk

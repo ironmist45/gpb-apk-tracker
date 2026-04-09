@@ -5,7 +5,7 @@ env:
 
 on:
   schedule:
-    - cron: "0 3 * * 1"  # раз в неделю (понедельник 03:00 UTC)
+    - cron: "0 3 * * 1"  # раз в неделю
   workflow_dispatch:
 
 permissions:
@@ -24,7 +24,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y file
+          sudo apt-get install -y file apksigner
 
       # ---------------------------
       - name: Download APK
@@ -39,6 +39,44 @@ jobs:
         run: |
           file app.apk
           file app.apk | grep -Eq "Zip archive|Android package" || (echo "Not a valid APK" && exit 1)
+
+      # ---------------------------
+      - name: Extract certificate
+        id: cert
+        run: |
+          apksigner verify --print-certs app.apk \
+            | grep 'Signer #1 certificate SHA-256 digest:' \
+            | awk '{print $NF}' > cert.txt
+          echo "cert=$(cat cert.txt)" >> $GITHUB_OUTPUT
+
+      # ---------------------------
+      - name: Load old certificate
+        id: oldcert
+        run: |
+          if [ -f cert_saved.txt ]; then
+            echo "oldcert=$(cat cert_saved.txt)" >> $GITHUB_OUTPUT
+          else
+            echo "oldcert=none" >> $GITHUB_OUTPUT
+          fi
+
+      # ---------------------------
+      - name: Check certificate
+        run: |
+          OLD=$(echo "$OLD_CERT" | tr -d '\n')
+          NEW=$(echo "$CERT" | tr -d '\n')
+
+          if [ "$OLD" != "none" ] && [ "$OLD" != "$NEW" ]; then
+            echo "ERROR: Certificate mismatch!"
+            exit 1
+          fi
+        env:
+          OLD_CERT: ${{ steps.oldcert.outputs.oldcert }}
+          CERT: ${{ steps.cert.outputs.cert }}
+
+      # ---------------------------
+      - name: Save certificate
+        if: steps.oldcert.outputs.oldcert == 'none'
+        run: mv cert.txt cert_saved.txt
 
       # ---------------------------
       - name: Calculate hash
@@ -83,7 +121,7 @@ jobs:
         run: |
           git config user.name "gpb-bot"
           git config user.email "gpb@example.com"
-          git add hash.txt
+          git add hash.txt cert_saved.txt
           git commit -m "New APK detected" || echo "No changes"
           git push
 
@@ -99,6 +137,9 @@ jobs:
 
             SHA256:
             ${{ steps.new.outputs.new }}
+
+            Certificate:
+            ${{ steps.cert.outputs.cert }}
           files: app.apk
 
       # ---------------------------
